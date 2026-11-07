@@ -23,7 +23,7 @@ Run **Actions → Build linux-aurora (aarch64) → Run workflow** (or
 `gh workflow run build-linux-aurora.yml -R ludagoo/smartroom-pkgs -f kernel_ref=smartroom/main`).
 `kernel_ref` is any branch, tag or commit of ludagoo/linux-aurora.
 
-1. Runs on `ubuntu-24.04-arm`, GitHub's free arm64 runner for public repos (4 vCPU, 16 GB). Expect about 45–55 minutes.
+1. Runs on `ubuntu-24.04-arm`, GitHub's free arm64 runner for public repos (4 vCPU, 16 GB). The first good build (run 2, 2026-11-07) took 46 minutes, 40 of them compiling.
 2. Checks out this repo, omacom/omarchy-pkgs at `omarchy-pkgs.lock`, and the kernel at `kernel_ref` (depth 1).
 3. Replaces omarchy-pkgs' `pkgbuilds/linux-aurora` with our copy and prints any difference in the run summary (none today).
 4. Runs the kernel tree's `tools/aurora-ci/prepare-recipe.py`: it sets `_commit` to the checked-out commit, makes `pkgrel` `1.<run number>` (so a build never has the version of a published Omarchy package, e.g. `7.2.11.aurora15-1.3`, `uname` `7.2.11-15-1.3-ARCH`), and points the source at the checkout instead of cloning GitHub.
@@ -59,6 +59,9 @@ reviewer alone does not stop them. That is why the rooms key is on hardware.
 
 Signing, the `[smartroom]` pacman repository (a GitHub release tagged
 `aarch64`), `smartroom-keyring`, build attestations, a scheduled rebuild.
+Before anything is published, the packages need our own packager name:
+omarchy-pkgs' builder image sets `PACKAGER="Omarchy <pkgs@omarchy.org>"`,
+so today's packages claim Omarchy built them.
 
 ## License
 
