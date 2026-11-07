@@ -62,20 +62,21 @@ jobs:
           LOCK: ${{ steps.lock.outputs.commit }}
           KERNEL_REF: ${{ inputs.kernel_ref }}
         run: |
-          # Show any difference from omarchy-pkgs' recipe at the lock (none
-          # while we carry no recipe changes), then build with ours.
+          rm -rf omarchy-pkgs/pkgbuilds/linux-aurora
+          cp -a smartroom-pkgs/pkgbuilds/linux-aurora omarchy-pkgs/pkgbuilds/linux-aurora
+          rm omarchy-pkgs/pkgbuilds/linux-aurora/LICENSE.omarchy-pkgs
+          # Show any difference from omarchy-pkgs' recipe at the lock, in
+          # content or file mode (none while we carry no recipe changes).
           {
             echo "### Recipe"
             echo
             echo "omarchy-pkgs lock \`$LOCK\`; kernel \`$KERNEL_REF\` = \`$(git -C linux rev-parse HEAD)\`."
             echo
             echo '```diff'
-            diff -ruN -x LICENSE.omarchy-pkgs omarchy-pkgs/pkgbuilds/linux-aurora smartroom-pkgs/pkgbuilds/linux-aurora || true
+            git -C omarchy-pkgs status --porcelain -- pkgbuilds/linux-aurora
+            git -C omarchy-pkgs diff -- pkgbuilds/linux-aurora
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          rm -rf omarchy-pkgs/pkgbuilds/linux-aurora
-          cp -a smartroom-pkgs/pkgbuilds/linux-aurora omarchy-pkgs/pkgbuilds/linux-aurora
-          rm omarchy-pkgs/pkgbuilds/linux-aurora/LICENSE.omarchy-pkgs
 
       - name: Point the recipe at the kernel commit
         run: |
