@@ -1,0 +1,116 @@
+# Build the aarch64 linux-aurora packages from ludagoo/linux-aurora with this
+# repository's pinned copy of omarchy-pkgs' recipe, inside omarchy-pkgs' own
+# Arch Linux ARM builder container, on GitHub's free arm64 runner. This is the
+# same path omacom's kernel CI takes (kernel-ci-jobs.yml, job "package").
+# Output: an unsigned workflow artifact. Nothing is signed or published here.
+
+name: Build linux-aurora (aarch64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: ludagoo/linux-aurora branch, tag or full commit SHA to build
+        required: true
+        default: smartroom/main
+
+permissions: {}
+
+concurrency:
+  group: build-linux-aurora-${{ inputs.kernel_ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: package
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: smartroom-pkgs
+          persist-credentials: false
+
+      - name: Read the omarchy-pkgs lock
+        id: lock
+        run: |
+          commit=$(head -n1 smartroom-pkgs/omarchy-pkgs.lock)
+          [[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo "::error::omarchy-pkgs.lock must hold one full SHA"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Check out omarchy-pkgs (build tooling) at the lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: omacom/omarchy-pkgs
+          ref: ${{ steps.lock.outputs.commit }}
+          path: omarchy-pkgs
+          persist-credentials: false
+
+      - name: Check out the kernel
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ludagoo/linux-aurora
+          ref: ${{ inputs.kernel_ref }}
+          path: linux
+          persist-credentials: false
+
+      - name: Use our pinned recipe
+        env:
+          LOCK: ${{ steps.lock.outputs.commit }}
+          KERNEL_REF: ${{ inputs.kernel_ref }}
+        run: |
+          # Show any difference from omarchy-pkgs' recipe at the lock (none
+          # while we carry no recipe changes), then build with ours.
+          {
+            echo "### Recipe"
+            echo
+            echo "omarchy-pkgs lock \`$LOCK\`; kernel \`$KERNEL_REF\` = \`$(git -C linux rev-parse HEAD)\`."
+            echo
+            echo '```diff'
+            diff -ruN -x LICENSE.omarchy-pkgs omarchy-pkgs/pkgbuilds/linux-aurora smartroom-pkgs/pkgbuilds/linux-aurora || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -rf omarchy-pkgs/pkgbuilds/linux-aurora
+          cp -a smartroom-pkgs/pkgbuilds/linux-aurora omarchy-pkgs/pkgbuilds/linux-aurora
+          rm omarchy-pkgs/pkgbuilds/linux-aurora/LICENSE.omarchy-pkgs
+
+      - name: Point the recipe at the kernel commit
+        run: |
+          # The kernel tree's own tool: sets _commit, makes pkgrel N.<run>
+          # (never equal to a published Omarchy version) and makes the
+          # recipe read the checkout instead of cloning GitHub.
+          mkdir -p out
+          python3 -I linux/tools/aurora-ci/prepare-recipe.py \
+            --recipe omarchy-pkgs/pkgbuilds/linux-aurora --kernel linux \
+            --commit "$(git -C linux rev-parse HEAD)" --revision "$GITHUB_RUN_NUMBER" \
+            --record out/recipe.json
+
+      - name: Build with omarchy-pkgs bin/build (Arch Linux ARM container)
+        working-directory: omarchy-pkgs
+        env:
+          CONTAINER_ENGINE: docker
+        run: bin/build --mirror edge --arch aarch64 --package linux-aurora
+
+      - name: Collect the packages
+        run: |
+          cp omarchy-pkgs/build-output/edge/aarch64/linux-aurora-*.pkg.tar.zst out/
+          (cd out && sha256sum ./*.pkg.tar.zst > SHA256SUMS)
+          ls -l out
+          {
+            echo "### Packages (unsigned)"
+            echo
+            echo '```'
+            cat out/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-aurora-aarch64-run${{ github.run_number }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
